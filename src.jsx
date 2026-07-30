@@ -99,7 +99,12 @@ function App() {
   };
 
   const createVideo = async () => {
-    setError('目前没有稳定、合法且无需 API Key 的公开视频生成接口。剧本和分镜图可以免费生成；视频将在配置可灵、即梦、Runway 等官方 Key 后启用。');
+    if (!project.frameUrl.trim() || project.frameUrl.startsWith('data:')) return setError('图生视频需要一张可公开访问的分镜图 URL。');
+    setError(''); setBusy('video');
+    try {
+      const data = await api('/api/videos', { method: 'POST', body: JSON.stringify({ prompt: project.videoPrompt, image: project.frameUrl, width: 768, height: 1152, num_frames: 81, frame_rate: 24 }) });
+      patchProject({ videoJob: { id: data.lookup_id, status: data.status || 'queued', raw: data } });
+    } catch (e) { setError(e.message); } finally { setBusy(''); }
   };
 
   const pollVideo = async () => {
