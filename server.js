@@ -31,6 +31,9 @@ const providers = {
 
 const env = name => process.env[name]?.trim() || '';
 const trimSlash = value => value.replace(/\/+$/, '');
+const modelApiBase = (providerId, value) => providerId === 'agnes'
+  ? `${trimSlash(value).replace(/\/v1$/, '')}/v1`
+  : trimSlash(value);
 const proxyUrl = env('HTTPS_PROXY') || env('HTTP_PROXY');
 const dispatcher = proxyUrl ? new ProxyAgent(proxyUrl) : undefined;
 const windowsJsonFetch = async (url, options = {}) => {
@@ -94,7 +97,7 @@ app.post('/api/providers/:id/test', async (req, res, next) => {
     if (!key) return res.status(503).json({ error: `${p.label} 尚未配置 API Key` });
     if (req.params.id !== 'agnes') return res.json({ ok: true, configured: true, verified: false, message: '已配置，尚未执行付费验证' });
     const model = env(p.model) || p.fallbackModel;
-    const base = trimSlash(env(p.base) || p.fallbackBase);
+    const base = modelApiBase(req.params.id, env(p.base) || p.fallbackBase);
     const data = await jsonFetch(`${base}/chat/completions`, { method: 'POST', headers: { Authorization: `Bearer ${key}`, 'content-type': 'application/json' }, body: JSON.stringify({ model, messages: [{ role: 'user', content: 'Reply exactly: ok' }], max_tokens: 5, temperature: 0 }) });
     res.json({ ok: Boolean(data.choices?.[0]?.message?.content), configured: true, verified: true, message: 'Agnes API 已验证可用' });
   } catch (error) { next(error); }
@@ -119,7 +122,7 @@ app.post('/api/text/generate', async (req, res, next) => {
       data = await jsonFetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ systemInstruction: system ? { parts: [{ text: system }] } : undefined, contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { temperature } }) });
       return res.json({ text: data.candidates?.[0]?.content?.parts?.map(x => x.text || '').join('') || '', usage: data.usageMetadata, provider, model: selectedModel });
     }
-    const base = trimSlash(env(p.base) || p.fallbackBase);
+    const base = modelApiBase(provider, env(p.base) || p.fallbackBase);
     data = await jsonFetch(`${base}/chat/completions`, { method: 'POST', headers: { Authorization: `Bearer ${key}`, 'content-type': 'application/json' }, body: JSON.stringify({ model: selectedModel, messages: [{ role: 'system', content: system || '你是专业的中文短剧编剧和分镜导演。' }, { role: 'user', content: prompt }], temperature }) });
     res.json({ text: data.choices?.[0]?.message?.content || '', usage: data.usage, provider, model: selectedModel });
   } catch (error) { next(error); }
@@ -138,7 +141,7 @@ app.post('/api/images/generate', async (req, res, next) => {
     if (!['agnes', 'openai'].includes(provider)) return res.status(400).json({ error: '该供应商未配置图片生成适配器' });
     const p = providers[provider], key = env(p.key);
     if (!key) return res.status(503).json({ error: `${p.label} 尚未配置 API Key` });
-    const base = trimSlash(env(p.base) || p.fallbackBase);
+    const base = modelApiBase(provider, env(p.base) || p.fallbackBase);
     const model = provider === 'agnes' ? env('AGNES_IMAGE_MODEL') || 'agnes-image-2.1-flash' : env('OPENAI_IMAGE_MODEL') || 'gpt-image-1';
     const body = { model, prompt, size };
     if (images.length) body.extra_body = { image: images, response_format: 'url' };
@@ -153,7 +156,7 @@ app.post('/api/videos', async (req, res, next) => {
     if (!key) return res.status(503).json({ error: 'Agnes 尚未配置 API Key' });
     const { prompt, image, width = 768, height = 1152, num_frames = 121, frame_rate = 24, seed, negative_prompt } = req.body;
     if (!prompt?.trim() || !image) return res.status(400).json({ error: '图生视频需要提示词和可公开访问的分镜图片 URL' });
-    const base = trimSlash(env('AGNES_BASE_URL') || 'https://apihub.agnes-ai.com');
+    const base = trimSlash(env('AGNES_BASE_URL') || 'https://apihub.agnes-ai.com').replace(/\/v1$/, '');
     const payload = { model: env('AGNES_VIDEO_MODEL') || 'agnes-video-v2.0', prompt, image, mode: 'ti2vid', width, height, num_frames, frame_rate };
     if (seed !== undefined && seed !== '') payload.seed = Number(seed);
     if (negative_prompt) payload.negative_prompt = negative_prompt;
@@ -166,7 +169,7 @@ app.get('/api/videos/:id', async (req, res, next) => {
   try {
     const key = env('AGNES_API_KEY');
     if (!key) return res.status(503).json({ error: 'Agnes 尚未配置 API Key' });
-    const base = trimSlash(env('AGNES_BASE_URL') || 'https://apihub.agnes-ai.com');
+    const base = trimSlash(env('AGNES_BASE_URL') || 'https://apihub.agnes-ai.com').replace(/\/v1$/, '');
     const headers = { Authorization: `Bearer ${key}` };
     try {
       return res.json(await jsonFetch(`${base}/agnesapi?video_id=${encodeURIComponent(req.params.id)}`, { headers }));
