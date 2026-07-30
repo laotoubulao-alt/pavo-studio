@@ -27,6 +27,8 @@ const providers = {
   doubao: { label: '豆包 / 火山方舟', kind: 'openai', key: 'ARK_API_KEY', base: 'ARK_BASE_URL', model: 'ARK_TEXT_MODEL', fallbackBase: 'https://ark.cn-beijing.volces.com/api/v3', fallbackModel: '' },
   zhipu: { label: '智谱 GLM', kind: 'openai', key: 'ZHIPU_API_KEY', base: 'ZHIPU_BASE_URL', model: 'ZHIPU_TEXT_MODEL', fallbackBase: 'https://open.bigmodel.cn/api/paas/v4', fallbackModel: 'glm-4-flash' },
   custom: { label: '自定义 OpenAI 兼容接口', kind: 'openai', key: 'CUSTOM_API_KEY', base: 'CUSTOM_BASE_URL', model: 'CUSTOM_TEXT_MODEL', fallbackBase: '', fallbackModel: '' }
+  ,imageApi: { label: '自定义图片 API', kind: 'openai', key: 'CUSTOM_IMAGE_API_KEY', base: 'CUSTOM_IMAGE_BASE_URL', model: 'CUSTOM_IMAGE_MODEL', fallbackBase: '', fallbackModel: '' }
+  ,videoApi: { label: '自定义视频 API', kind: 'openai', key: 'CUSTOM_VIDEO_API_KEY', base: 'CUSTOM_VIDEO_BASE_URL', model: 'CUSTOM_VIDEO_MODEL', fallbackBase: '', fallbackModel: '' }
 };
 
 const env = name => process.env[name]?.trim() || '';
@@ -69,7 +71,7 @@ function publicConfig() {
     label: p.label,
     configured: ['puter', 'pollinations'].includes(p.kind) || Boolean(env(p.key) && (p.kind !== 'openai' || env(p.base) || p.fallbackBase)),
     model: env(p.model) || p.fallbackModel,
-    capabilities: id === 'agnes' ? ['text', 'image', 'video'] : id === 'puter' ? ['text'] : ['pollinations', 'openai'].includes(id) ? ['image'] : ['text']
+    capabilities: id === 'agnes' ? ['text', 'image', 'video'] : id === 'puter' ? ['text'] : ['pollinations', 'openai', 'imageApi'].includes(id) ? ['image'] : id === 'videoApi' ? ['video'] : ['text']
   }));
 }
 
@@ -138,11 +140,11 @@ app.post('/api/images/generate', async (req, res, next) => {
       const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(safePrompt)}?width=${width || 1024}&height=${height || 1536}&model=flux&nologo=true&seed=${Date.now()}`;
       return res.json({ images: [{ url }], provider, model: 'flux' });
     }
-    if (!['agnes', 'openai'].includes(provider)) return res.status(400).json({ error: '该供应商未配置图片生成适配器' });
+    if (!['agnes', 'openai', 'imageApi'].includes(provider)) return res.status(400).json({ error: '该供应商未配置图片生成适配器' });
     const p = providers[provider], key = env(p.key);
     if (!key) return res.status(503).json({ error: `${p.label} 尚未配置 API Key` });
     const base = modelApiBase(provider, env(p.base) || p.fallbackBase);
-    const model = provider === 'agnes' ? env('AGNES_IMAGE_MODEL') || 'agnes-image-2.1-flash' : env('OPENAI_IMAGE_MODEL') || 'gpt-image-1';
+    const model = provider === 'agnes' ? env('AGNES_IMAGE_MODEL') || 'agnes-image-2.1-flash' : provider === 'imageApi' ? env(p.model) : env('OPENAI_IMAGE_MODEL') || 'gpt-image-1';
     const body = { model, prompt, size };
     if (images.length) body.extra_body = { image: images, response_format: 'url' };
     const data = await jsonFetch(`${base}/images/generations`, { method: 'POST', headers: { Authorization: `Bearer ${key}`, 'content-type': 'application/json' }, body: JSON.stringify(body) });
@@ -152,15 +154,19 @@ app.post('/api/images/generate', async (req, res, next) => {
 
 app.post('/api/videos', async (req, res, next) => {
   try {
-    const key = env('AGNES_API_KEY');
-    if (!key) return res.status(503).json({ error: 'Agnes 尚未配置 API Key' });
-    const { prompt, image, width = 768, height = 1152, num_frames = 121, frame_rate = 24, seed, negative_prompt } = req.body;
+    const { provider = 'agnes', prompt, image, width = 768, height = 1152, num_frames = 121, frame_rate = 24, seed, negative_prompt } = req.body;
+    if (!['agnes', 'videoApi'].includes(provider)) return res.status(400).json({ error: '该视频供应商尚未配置适配器' });
+    const p = providers[provider], key = env(p.key);
+    if (!key) return res.status(503).json({ error: `${p.label} 尚未配置 API Key` });
     if (!prompt?.trim() || !image) return res.status(400).json({ error: '图生视频需要提示词和可公开访问的分镜图片 URL' });
-    const base = trimSlash(env('AGNES_BASE_URL') || 'https://apihub.agnes-ai.com').replace(/\/v1$/, '');
-    const payload = { model: env('AGNES_VIDEO_MODEL') || 'agnes-video-v2.0', prompt, image, mode: 'ti2vid', width, height, num_frames, frame_rate };
+    const configuredBase = env(p.base) || p.fallbackBase;
+    if (!configuredBase) return res.status(503).json({ error: `${p.label} 尚未配置 API Base URL` });
+    const base = trimSlash(configuredBase);
+    const payload = { model: provider === 'agnes' ? env('AGNES_VIDEO_MODEL') || 'agnes-video-v2.0' : env(p.model), prompt, image, mode: 'ti2vid', width, height, num_frames, frame_rate };
     if (seed !== undefined && seed !== '') payload.seed = Number(seed);
     if (negative_prompt) payload.negative_prompt = negative_prompt;
-    const data = await jsonFetch(`${base}/v1/videos`, { method: 'POST', headers: { Authorization: `Bearer ${key}`, 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+    const url = provider === 'agnes' ? `${base.replace(/\/v1$/, '')}/v1/videos` : `${base}/videos`;
+    const data = await jsonFetch(url, { method: 'POST', headers: { Authorization: `Bearer ${key}`, 'content-type': 'application/json' }, body: JSON.stringify(payload) });
     res.json({ ...data, lookup_id: data.video_id || data.task_id });
   } catch (error) { next(error); }
 });

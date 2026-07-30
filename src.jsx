@@ -57,7 +57,7 @@ function App() {
   useEffect(() => { setModel(selected?.model || ''); }, [selected]);
   useEffect(() => {
     if (selected?.capabilities.includes(stageCapability)) return;
-    const fallback = stageProviders.find(item => item.configured) || stageProviders[0];
+    const fallback = stageProviders.find(item => item.id === 'agnes' && item.configured) || stageProviders.find(item => item.configured) || stageProviders[0];
     if (fallback) { setProvider(fallback.id); setModel(fallback.model || ''); }
   }, [stageCapability, stageProviders, selected]);
   useEffect(() => {
@@ -101,7 +101,7 @@ function App() {
 
   const createImage = async () => {
     if (!project.framePrompt.trim()) return setError('请先生成或填写分镜图提示词。');
-    setError(''); setBusy('image');
+    setError(''); setBusy('image'); patchProject({ frameUrl: '' });
     try {
       const imageProvider = selected?.capabilities.includes('image') ? provider : 'pollinations';
       let imagePrompt = project.framePrompt;
@@ -119,8 +119,8 @@ function App() {
     if (!project.frameUrl.trim() || project.frameUrl.startsWith('data:')) return setError('图生视频需要一张可公开访问的分镜图 URL。');
     setError(''); setBusy('video');
     try {
-      const data = await api('/api/videos', { method: 'POST', body: JSON.stringify({ prompt: project.videoPrompt, image: project.frameUrl, width: 768, height: 1152, num_frames: 81, frame_rate: 24 }) });
-      patchProject({ videoJob: { id: data.lookup_id, status: data.status || 'queued', raw: data } });
+      const data = await api('/api/videos', { method: 'POST', body: JSON.stringify({ provider, prompt: project.videoPrompt, image: project.frameUrl, width: 768, height: 1152, num_frames: 81, frame_rate: 24 }) });
+      patchProject({ videoJob: { id: data.lookup_id, provider, status: data.status || 'queued', raw: data } });
     } catch (e) { setError(e.message); } finally { setBusy(''); }
   };
 
@@ -178,15 +178,16 @@ function Settings({ config, provider, setProvider, model, setModel, refresh, clo
   const [apiKey, setApiKey] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
   const [saving, setSaving] = useState(false);
+  const [catalogChoice, setCatalogChoice] = useState('');
   const save = async () => {
     setSaving(true);
     try { const data = await api(`/api/providers/${provider}/configure`, { method: 'POST', body: JSON.stringify({ apiKey, baseUrl, model }) }); refresh(data); setApiKey(''); }
     catch (e) { window.alert(e.message); } finally { setSaving(false); }
   };
   const choose = next => { setProvider(next.id); setModel(next.model); };
-  const group = (title, capability) => <div className="modelGroup"><h3>{title}</h3><div className="providerList">{config.providers.filter(p => p.capabilities.includes(capability)).map(p => <button key={p.id} className={provider === p.id ? 'selected' : ''} onClick={() => choose(p)}><span className="providerLogo">{p.label[0]}</span><span><b>{p.label}</b><small>{p.model || '由平台自动选择模型'}</small></span><em className={p.configured ? 'on' : ''}>{p.configured ? <><Check/>{['puter', 'pollinations'].includes(p.id) ? '无需 Key' : '已配置'}</> : '需要 Key'}</em></button>)}{marketCatalog[capability].map(name => <button key={name} className="reserved" title="等待接入该平台的官方 API 凭据"><span className="providerLogo">{name[0]}</span><span><b>{name}</b><small>官方 API 接口卡位</small></span><em>接口预留</em></button>)}</div></div>;
+  const group = (title, capability) => <div className="modelGroup"><h3>{title}</h3><div className="providerList">{config.providers.filter(p => p.capabilities.includes(capability)).map(p => <button key={p.id} className={provider === p.id ? 'selected' : ''} onClick={() => { choose(p); setCatalogChoice(''); }}><span className="providerLogo">{p.label[0]}</span><span><b>{p.label}</b><small>{p.model || '由平台自动选择模型'}</small></span><em className={p.configured ? 'on' : ''}>{p.configured ? <><Check/>{['puter', 'pollinations'].includes(p.id) ? '无需 Key' : '已配置'}</> : '需要 Key'}</em></button>)}{marketCatalog[capability].map(name => <button key={name} className={`reserved ${catalogChoice === name ? 'selected' : ''}`} onClick={() => { const targetId = capability === 'text' ? 'custom' : capability === 'image' ? 'imageApi' : 'videoApi'; const target = config.providers.find(p => p.id === targetId); if (target) choose(target); setCatalogChoice(name); }}><span className="providerLogo">{name[0]}</span><span><b>{name}</b><small>点击配置官方 API</small></span><em>填写接口</em></button>)}</div></div>;
   const noKey = ['puter', 'pollinations'].includes(provider);
-  return <div className="modalBackdrop" onMouseDown={close}><section className="modal" onMouseDown={e => e.stopPropagation()}><header className="modalHead"><div><small>MODEL CONTROL CENTER</small><h2>生成模型</h2></div><button onClick={close}>完成</button></header><p className="securityNote">默认使用无需 API Key 的剧本与图片入口。带“需要 Key”的平台只有填写官方凭据后才能真实调用。</p>{group('剧本大模型', 'text')}{group('图片大模型', 'image')}{group('视频大模型', 'video')}<div className="capabilityLegend"><span>当前选择：{item?.label}</span><span>{noKey ? '无需填写 Key' : '服务端安全保存'}</span></div>{!noKey && <><Field label="API Key"><input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder={item?.configured ? '已配置，留空表示不修改' : '粘贴供应商 API Key'} /></Field><Field label="模型名"><input value={model} onChange={e => setModel(e.target.value)} /></Field>{item?.id !== 'anthropic' && item?.id !== 'gemini' && <Field label="接口地址（可选）"><input value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder="https://api.example.com/v1" /></Field>}<button className="primary" onClick={save} disabled={saving}>{saving ? '正在保存...' : '保存配置'}</button></>}<p className="envHint">免费视频生成没有稳定的免 Key 公共 API；视频入口只有配置官方凭据后才启用。</p></section></div>;
+  return <div className="modalBackdrop" onMouseDown={close}><section className="modal" onMouseDown={e => e.stopPropagation()}><header className="modalHead"><div><small>MODEL CONTROL CENTER</small><h2>生成模型</h2></div><button onClick={close}>完成</button></header><p className="securityNote">Agnes 已验证可用。其他平台点击卡片后可填写官方 API Key、模型名和 API Base URL。</p>{group('剧本大模型', 'text')}{group('图片大模型', 'image')}{group('视频大模型', 'video')}<div className="capabilityLegend"><span>当前选择：{catalogChoice || item?.label}</span><span>{noKey ? '无需填写 Key' : '服务端安全保存'}</span></div>{!noKey && <><Field label="API Key"><input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder={item?.configured ? '已配置，留空表示不修改' : '粘贴供应商 API Key'} /></Field><Field label="模型名"><input value={model} onChange={e => setModel(e.target.value)} placeholder="填写平台官方模型 ID" /></Field>{item?.id !== 'anthropic' && item?.id !== 'gemini' && <Field label="API Base URL"><input value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder="https://api.example.com/v1" /></Field>}<button className="primary" onClick={save} disabled={saving}>{saving ? '正在保存...' : '保存并启用接口'}</button></>}<p className="envHint">不同平台必须使用其官方开放平台提供的 API 地址和密钥；普通网页链接不能作为生成接口。</p></section></div>;
 }
 
 createRoot(document.getElementById('root')).render(<App/>);
