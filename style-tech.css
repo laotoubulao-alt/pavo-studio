@@ -16,3 +16,4 @@ body{background-image:linear-gradient(#10202b33 1px,transparent 1px),linear-grad
 .error{background:#28111b;border-color:#8d3f59;color:#ffb7ca}.modalBackdrop{background:#02050ae8}.modal{background:#0a151d;border-color:#1a4051}.securityNote{background:#0e2430;color:#8fb5c4}.providerList button{background:#071018;border-color:#1a4051}.providerList button.selected{background:#0e2632;border-color:#61e8ff}.providerLogo{background:#103244;color:#7cf7ff}.envHint{color:#7295a5}
 @media(max-width:760px){.workspace:before{display:none}}
 .modelGroup{margin:16px 0}.modelGroup h3{margin:0 0 8px;color:#8fa9bd;font-size:12px;font-weight:700;text-transform:uppercase}.modelGroup .providerList{margin:0}
+.providerList button.reserved{opacity:.66;border-style:dashed;cursor:default}.providerList button.reserved:hover{transform:none}.providerList button.reserved em{color:#8294a3}

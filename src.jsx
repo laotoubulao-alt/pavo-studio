@@ -12,6 +12,12 @@ const stages = [
   { id: 'video', label: '图生视频', icon: Video }
 ];
 
+const marketCatalog = {
+  text: ['Grok / xAI', 'OpenRouter', 'Groq', 'Mistral', '百川智能', '腾讯混元', 'MiniMax'],
+  image: ['即梦 AI', '可灵 AI 图片', 'Google Imagen', 'Midjourney', 'Ideogram', 'Stability AI', 'FLUX / fal.ai', 'Leonardo AI', '通义万相', '腾讯混元图片'],
+  video: ['可灵 AI 视频', '即梦 AI 视频', 'Runway', 'Google Veo', 'OpenAI Sora', 'Luma Dream Machine', 'Pika', 'Vidu', '海螺 AI', 'MiniMax Video', 'PixVerse', 'HunyuanVideo', 'Replicate', 'fal.ai Video']
+};
+
 const emptyProject = { idea: '', script: '', shots: '', framePrompt: '', frameUrl: '', videoPrompt: '人物保持一致，轻微呼吸，缓慢抬眼看向镜头；镜头稳定向前推进，电影感光影，自然运动。', videoJob: null };
 const api = async (url, options = {}) => {
   const response = await fetch(url, { ...options, headers: { 'content-type': 'application/json', ...options.headers } });
@@ -151,7 +157,7 @@ function Settings({ config, provider, setProvider, model, setModel, refresh, clo
     catch (e) { window.alert(e.message); } finally { setSaving(false); }
   };
   const choose = next => { setProvider(next.id); setModel(next.model); };
-  const group = (title, capability) => <div className="modelGroup"><h3>{title}</h3><div className="providerList">{config.providers.filter(p => p.capabilities.includes(capability)).map(p => <button key={p.id} className={provider === p.id ? 'selected' : ''} onClick={() => choose(p)}><span className="providerLogo">{p.label[0]}</span><span><b>{p.label}</b><small>{p.model || '由平台自动选择模型'}</small></span><em className={p.configured ? 'on' : ''}>{p.configured ? <><Check/>{['puter', 'pollinations'].includes(p.id) ? '无需 Key' : '已配置'}</> : '需要 Key'}</em></button>)}</div></div>;
+  const group = (title, capability) => <div className="modelGroup"><h3>{title}</h3><div className="providerList">{config.providers.filter(p => p.capabilities.includes(capability)).map(p => <button key={p.id} className={provider === p.id ? 'selected' : ''} onClick={() => choose(p)}><span className="providerLogo">{p.label[0]}</span><span><b>{p.label}</b><small>{p.model || '由平台自动选择模型'}</small></span><em className={p.configured ? 'on' : ''}>{p.configured ? <><Check/>{['puter', 'pollinations'].includes(p.id) ? '无需 Key' : '已配置'}</> : '需要 Key'}</em></button>)}{marketCatalog[capability].map(name => <button key={name} className="reserved" title="等待接入该平台的官方 API 凭据"><span className="providerLogo">{name[0]}</span><span><b>{name}</b><small>官方 API 接口卡位</small></span><em>接口预留</em></button>)}</div></div>;
   const noKey = ['puter', 'pollinations'].includes(provider);
   return <div className="modalBackdrop" onMouseDown={close}><section className="modal" onMouseDown={e => e.stopPropagation()}><header className="modalHead"><div><small>MODEL CONTROL CENTER</small><h2>生成模型</h2></div><button onClick={close}>完成</button></header><p className="securityNote">默认使用无需 API Key 的剧本与图片入口。带“需要 Key”的平台只有填写官方凭据后才能真实调用。</p>{group('剧本大模型', 'text')}{group('图片大模型', 'image')}{group('视频大模型', 'video')}<div className="capabilityLegend"><span>当前选择：{item?.label}</span><span>{noKey ? '无需填写 Key' : '服务端安全保存'}</span></div>{!noKey && <><Field label="API Key"><input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder={item?.configured ? '已配置，留空表示不修改' : '粘贴供应商 API Key'} /></Field><Field label="模型名"><input value={model} onChange={e => setModel(e.target.value)} /></Field>{item?.id !== 'anthropic' && item?.id !== 'gemini' && <Field label="接口地址（可选）"><input value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder="https://api.example.com/v1" /></Field>}<button className="primary" onClick={save} disabled={saving}>{saving ? '正在保存...' : '保存配置'}</button></>}<p className="envHint">免费视频生成没有稳定的免 Key 公共 API；视频入口只有配置官方凭据后才启用。</p></section></div>;
 }
