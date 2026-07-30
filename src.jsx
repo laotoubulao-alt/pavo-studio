@@ -61,7 +61,15 @@ function App() {
       frame: `根据以下分镜脚本，提炼第一个镜头的单帧生图提示词。输出中文提示词，包含人物固定外观、场景、动作瞬间、构图、镜头焦段、光线、色彩、电影质感，并明确要求无文字、无水印、9:16。只输出提示词。\n\n${source}`
     };
     try {
-      const data = await api('/api/text/generate', { method: 'POST', body: JSON.stringify({ provider, model, prompt: prompts[kind], system: '你是专业的中国短剧编剧、分镜导演和视觉提示词设计师。输出必须具体、可执行。' }) });
+      let data;
+      if (provider === 'puter') {
+        if (!window.puter?.ai) throw new Error('免费 AI 组件加载失败，请刷新页面后重试');
+        const result = await window.puter.ai.chat(prompts[kind], { model: model || 'gpt-5-nano' });
+        data = { text: typeof result === 'string' ? result : result?.message?.content || result?.text || '' };
+        if (!data.text) throw new Error('模型没有返回文本，请换一个模型重试');
+      } else {
+        data = await api('/api/text/generate', { method: 'POST', body: JSON.stringify({ provider, model, prompt: prompts[kind], system: '你是专业的中国短剧编剧、分镜导演和视觉提示词设计师。输出必须具体、可执行。' }) });
+      }
       if (kind === 'script') { patchProject({ script: data.text }); setStage('script'); }
       if (kind === 'shots') { patchProject({ shots: data.text }); setStage('shots'); }
       if (kind === 'frame') { patchProject({ framePrompt: data.text }); setStage('frames'); }
@@ -72,7 +80,7 @@ function App() {
     if (!project.framePrompt.trim()) return setError('请先生成或填写分镜图提示词。');
     setError(''); setBusy('image');
     try {
-      const imageProvider = selected?.capabilities.includes('image') ? provider : 'agnes';
+      const imageProvider = selected?.capabilities.includes('image') ? provider : 'pollinations';
       const data = await api('/api/images/generate', { method: 'POST', body: JSON.stringify({ provider: imageProvider, prompt: project.framePrompt, size: '1024x1536' }) });
       const item = data.images?.[0] || {};
       patchProject({ frameUrl: item.url || (item.b64_json ? `data:image/png;base64,${item.b64_json}` : '') });
@@ -147,7 +155,10 @@ function Settings({ config, provider, setProvider, model, setModel, refresh, clo
     try { const data = await api(`/api/providers/${provider}/configure`, { method: 'POST', body: JSON.stringify({ apiKey, baseUrl, model }) }); refresh(data); setApiKey(''); }
     catch (e) { window.alert(e.message); } finally { setSaving(false); }
   };
-  return <div className="modalBackdrop" onMouseDown={close}><section className="modal" onMouseDown={e => e.stopPropagation()}><header className="modalHead"><div><small>MODEL CONTROL CENTER</small><h2>模型与接口</h2></div><button onClick={close}>完成</button></header><p className="securityNote">Key 仅提交到本机服务端内存，不会回传、写入浏览器或 GitHub。部署到云端时请优先使用环境变量。</p><div className="providerList">{config.providers.map(item => <button key={item.id} className={provider === item.id ? 'selected' : ''} onClick={() => { setProvider(item.id); setModel(item.model); }}><span className="providerLogo">{item.label[0]}</span><span><b>{item.label}</b><small>{item.capabilities.join(' · ')} · {item.model || '未设置模型名'}</small></span><em className={item.configured ? 'on' : ''}>{item.configured ? <><Check/>已配置</> : '未配置'}</em></button>)}</div><div className="capabilityLegend"><span>剧本大模型：{item?.capabilities.includes('text') ? '可用' : '不可用'}</span><span>图片大模型：{item?.capabilities.includes('image') ? '可用' : '不可用'}</span><span>视频大模型：{item?.capabilities.includes('video') ? 'Agnes' : '仅 Agnes'}</span></div><Field label="API Key"><input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder={item?.configured ? '已配置，留空表示不修改' : '粘贴供应商 API Key'} /></Field><Field label="模型名"><input value={model} onChange={e => setModel(e.target.value)} placeholder="例如 gpt-5-mini / deepseek-chat" /></Field>{item?.id !== 'anthropic' && item?.id !== 'gemini' && <Field label="接口地址（可选）"><input value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder="https://api.example.com/v1" /></Field>}<button className="primary" onClick={save} disabled={saving}>{saving ? '正在保存...' : '保存到服务端并刷新状态'}</button><p className="envHint">已支持：Agnes、OpenAI、Anthropic、Gemini、DeepSeek、Kimi、通义千问、豆包、智谱和自定义 OpenAI 兼容接口。</p></section></div>;
+  const choose = next => { setProvider(next.id); setModel(next.model); };
+  const group = (title, capability) => <div className="modelGroup"><h3>{title}</h3><div className="providerList">{config.providers.filter(p => p.capabilities.includes(capability)).map(p => <button key={p.id} className={provider === p.id ? 'selected' : ''} onClick={() => choose(p)}><span className="providerLogo">{p.label[0]}</span><span><b>{p.label}</b><small>{p.model || '由平台自动选择模型'}</small></span><em className={p.configured ? 'on' : ''}>{p.configured ? <><Check/>{['puter', 'pollinations'].includes(p.id) ? '无需 Key' : '已配置'}</> : '需要 Key'}</em></button>)}</div></div>;
+  const noKey = ['puter', 'pollinations'].includes(provider);
+  return <div className="modalBackdrop" onMouseDown={close}><section className="modal" onMouseDown={e => e.stopPropagation()}><header className="modalHead"><div><small>MODEL CONTROL CENTER</small><h2>生成模型</h2></div><button onClick={close}>完成</button></header><p className="securityNote">默认使用无需 API Key 的剧本与图片入口。带“需要 Key”的平台只有填写官方凭据后才能真实调用。</p>{group('剧本大模型', 'text')}{group('图片大模型', 'image')}{group('视频大模型', 'video')}<div className="capabilityLegend"><span>当前选择：{item?.label}</span><span>{noKey ? '无需填写 Key' : '服务端安全保存'}</span></div>{!noKey && <><Field label="API Key"><input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder={item?.configured ? '已配置，留空表示不修改' : '粘贴供应商 API Key'} /></Field><Field label="模型名"><input value={model} onChange={e => setModel(e.target.value)} /></Field>{item?.id !== 'anthropic' && item?.id !== 'gemini' && <Field label="接口地址（可选）"><input value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder="https://api.example.com/v1" /></Field>}<button className="primary" onClick={save} disabled={saving}>{saving ? '正在保存...' : '保存配置'}</button></>}<p className="envHint">免费视频生成没有稳定的免 Key 公共 API；视频入口只有配置官方凭据后才启用。</p></section></div>;
 }
 
 createRoot(document.getElementById('root')).render(<App/>);

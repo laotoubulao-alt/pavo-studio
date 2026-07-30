@@ -15,6 +15,8 @@ const root = path.dirname(fileURLToPath(import.meta.url));
 app.use(express.json({ limit: '12mb' }));
 
 const providers = {
+  puter: { label: 'Puter AI 免费入口', kind: 'puter', key: '', base: '', model: '', fallbackModel: 'gpt-5-nano' },
+  pollinations: { label: 'Pollinations 免费模型', kind: 'pollinations', key: '', base: '', model: '', fallbackModel: 'openai' },
   agnes: { label: 'Agnes AI', kind: 'openai', key: 'AGNES_API_KEY', base: 'AGNES_BASE_URL', model: 'AGNES_TEXT_MODEL', fallbackBase: 'https://apihub.agnes-ai.com', fallbackModel: 'agnes-2.0-flash' },
   openai: { label: 'OpenAI', kind: 'openai', key: 'OPENAI_API_KEY', base: 'OPENAI_BASE_URL', model: 'OPENAI_TEXT_MODEL', fallbackBase: 'https://api.openai.com/v1', fallbackModel: 'gpt-5-mini' },
   anthropic: { label: 'Anthropic', kind: 'anthropic', key: 'ANTHROPIC_API_KEY', model: 'ANTHROPIC_TEXT_MODEL', fallbackModel: 'claude-sonnet-4-5' },
@@ -62,9 +64,9 @@ function publicConfig() {
   return Object.entries(providers).map(([id, p]) => ({
     id,
     label: p.label,
-    configured: Boolean(env(p.key) && (p.kind !== 'openai' || env(p.base) || p.fallbackBase)),
+    configured: ['puter', 'pollinations'].includes(p.kind) || Boolean(env(p.key) && (p.kind !== 'openai' || env(p.base) || p.fallbackBase)),
     model: env(p.model) || p.fallbackModel,
-    capabilities: id === 'agnes' ? ['text', 'image', 'video'] : id === 'openai' ? ['text', 'image'] : ['text']
+    capabilities: id === 'agnes' ? ['text', 'image', 'video'] : id === 'puter' ? ['text'] : ['pollinations', 'openai'].includes(id) ? ['image'] : ['text']
   }));
 }
 
@@ -86,6 +88,8 @@ app.post('/api/providers/:id/test', async (req, res, next) => {
   try {
     const p = providers[req.params.id];
     if (!p) return res.status(404).json({ error: '模型供应商不存在' });
+    if (p.kind === 'puter') return res.json({ ok: true, configured: true, verified: true, message: '浏览器授权后可用' });
+    if (p.kind === 'pollinations') return res.json({ ok: true, configured: true, verified: true, message: '免费图片模型可用' });
     const key = env(p.key);
     if (!key) return res.status(503).json({ error: `${p.label} 尚未配置 API Key` });
     if (req.params.id !== 'agnes') return res.json({ ok: true, configured: true, verified: false, message: '已配置，尚未执行付费验证' });
@@ -125,6 +129,11 @@ app.post('/api/images/generate', async (req, res, next) => {
   try {
     const { provider = 'agnes', prompt, size = '1024x1536', images = [] } = req.body;
     if (!prompt?.trim()) return res.status(400).json({ error: '缺少图片提示词' });
+    if (provider === 'pollinations') {
+      const [width, height] = size.split('x').map(Number);
+      const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=${width || 1024}&height=${height || 1536}&model=flux&nologo=true&seed=${Date.now()}`;
+      return res.json({ images: [{ url }], provider, model: 'flux' });
+    }
     if (!['agnes', 'openai'].includes(provider)) return res.status(400).json({ error: '该供应商未配置图片生成适配器' });
     const p = providers[provider], key = env(p.key);
     if (!key) return res.status(503).json({ error: `${p.label} 尚未配置 API Key` });
