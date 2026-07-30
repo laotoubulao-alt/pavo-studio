@@ -40,6 +40,8 @@ function App() {
   const [providerHealth, setProviderHealth] = useState({ status: 'checking', message: '正在验证' });
   const [previewPlaying, setPreviewPlaying] = useState(true);
   const selected = useMemo(() => config.providers.find(item => item.id === provider), [config, provider]);
+  const stageCapability = ['idea', 'script', 'shots'].includes(stage) ? 'text' : stage === 'frames' ? 'image' : 'video';
+  const stageProviders = useMemo(() => config.providers.filter(item => item.capabilities.includes(stageCapability)), [config, stageCapability]);
   const patchProject = values => setProject(current => ({ ...current, ...values }));
   const archiveCurrent = () => {
     if (!project.idea.trim() && !project.script.trim()) return history;
@@ -53,6 +55,11 @@ function App() {
 
   useEffect(() => { api('/api/config').then(data => { setConfig(data); const first = data.providers.find(item => item.configured); if (first) setProvider(first.id); }).catch(e => setError(e.message)); }, []);
   useEffect(() => { setModel(selected?.model || ''); }, [selected]);
+  useEffect(() => {
+    if (selected?.capabilities.includes(stageCapability)) return;
+    const fallback = stageProviders.find(item => item.configured) || stageProviders[0];
+    if (fallback) { setProvider(fallback.id); setModel(fallback.model || ''); }
+  }, [stageCapability, stageProviders, selected]);
   useEffect(() => {
     if (!selected) return;
     if (!selected.configured) { setProviderHealth({ status: 'missing', message: '未配置' }); return; }
@@ -136,7 +143,7 @@ function App() {
     </aside>
 
     <main className="main">
-      <header className="topbar"><div><small>REAL GENERATION WORKSPACE</small><h1>{stages.find(item => item.id === stage)?.label}</h1></div><div className="topActions"><span className="autosave"><Check/>已自动保存</span><button className={`providerState ${providerHealth.status}`} onClick={() => setSettings(true)} title={providerHealth.detail || providerHealth.message}><i/>{selected?.label || '加载中'} · {providerHealth.message}</button></div></header>
+      <header className="topbar"><div><small>REAL GENERATION WORKSPACE</small><h1>{stages.find(item => item.id === stage)?.label}</h1></div><div className="topActions"><label className="stepModel"><span>当前步骤模型</span><select value={provider} onChange={e => { const next = config.providers.find(item => item.id === e.target.value); setProvider(e.target.value); setModel(next?.model || ''); }}>{stageProviders.map(item => <option key={item.id} value={item.id} disabled={!item.configured}>{item.label} · {item.model || '未设置模型'}</option>)}</select></label><span className="autosave"><Check/>已自动保存</span><button className={`providerState ${providerHealth.status}`} onClick={() => setSettings(true)} title={providerHealth.detail || providerHealth.message}><i/>{selected?.label || '加载中'} · {providerHealth.message}</button></div></header>
       {error && <div className="error"><CircleAlert/><span>{error}</span><button onClick={() => setError('')}>关闭</button></div>}
 
       <section className="workspace">
@@ -149,9 +156,9 @@ function App() {
 
         {stage === 'shots' && <Panel eyebrow="SHOT DESIGN" title="分镜脚本" note="校对人物一致性、景别和运镜，再提炼首帧提示词。"><textarea className="editor" value={project.shots} onChange={e => patchProject({ shots: e.target.value })} placeholder="分镜表会显示在这里。" /><Action busy={busy === 'frame'} disabled={!project.shots.trim()} onClick={() => runText('frame')}>提炼首帧提示词</Action></Panel>}
 
-        {stage === 'frames' && <div className="split"><Panel eyebrow="KEYFRAME" title="分镜图提示词" note="生图接口已保留，也可直接粘贴已有分镜图 URL。"><textarea className="promptInput" value={project.framePrompt} onChange={e => patchProject({ framePrompt: e.target.value })} placeholder="分镜图提示词" /><Action busy={busy === 'image'} disabled={!project.framePrompt.trim()} onClick={createImage}>调用生图模型</Action><Field label="分镜图公开 URL"><input value={project.frameUrl} onChange={e => patchProject({ frameUrl: e.target.value })} placeholder="https://.../storyboard-frame.png" /></Field></Panel><FramePreview url={project.frameUrl}/></div>}
+        {stage === 'frames' && <div className="split"><Panel eyebrow="KEYFRAME" title="分镜图提示词" note={`本步骤使用：${selected?.label || '未选择'} · ${model || selected?.model || '默认模型'}`}><textarea className="promptInput" value={project.framePrompt} onChange={e => patchProject({ framePrompt: e.target.value })} placeholder="分镜图提示词" /><Action busy={busy === 'image'} disabled={!project.framePrompt.trim()} onClick={createImage}>使用 {selected?.label || '图片模型'} 生成</Action><Field label="分镜图公开 URL"><input value={project.frameUrl} onChange={e => patchProject({ frameUrl: e.target.value })} placeholder="https://.../storyboard-frame.png" /></Field></Panel><FramePreview url={project.frameUrl}/></div>}
 
-        {stage === 'video' && <div className="split"><Panel eyebrow="MOTION LAB" title="Agnes 图生视频" note="只在此步骤调用 Agnes Video v2.0。"><Field label="分镜图公开 URL"><input value={project.frameUrl} onChange={e => patchProject({ frameUrl: e.target.value })} placeholder="https://..." /></Field><Field label="运动提示词"><textarea value={project.videoPrompt} onChange={e => patchProject({ videoPrompt: e.target.value })} /></Field><div className="videoSpecs"><span>9:16</span><span>121 帧</span><span>24 FPS</span><span>约 5 秒</span></div><Action busy={busy === 'video'} disabled={!project.frameUrl.trim()} onClick={createVideo}><Play/>创建视频任务</Action></Panel><VideoJob job={project.videoJob} busy={busy} poll={pollVideo}/></div>}
+        {stage === 'video' && <div className="split"><Panel eyebrow="MOTION LAB" title="图生视频" note={`本步骤使用：${selected?.label || '未选择'} · agnes-video-v2.0`}><Field label="分镜图公开 URL"><input value={project.frameUrl} onChange={e => patchProject({ frameUrl: e.target.value })} placeholder="https://..." /></Field><Field label="运动提示词"><textarea value={project.videoPrompt} onChange={e => patchProject({ videoPrompt: e.target.value })} /></Field><div className="videoSpecs"><span>9:16</span><span>81 帧</span><span>24 FPS</span><span>约 3 秒</span></div><Action busy={busy === 'video'} disabled={!project.frameUrl.trim()} onClick={createVideo}><Play/>使用 Agnes 创建视频</Action></Panel><VideoJob job={project.videoJob} busy={busy} poll={pollVideo}/></div>}
       </section>
     </main>
 
