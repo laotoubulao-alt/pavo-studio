@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: pavo-studio
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    envVars:
+      - key: AGNES_API_KEY
+        sync: false
+      - key: AGNES_BASE_URL
+        value: https://apihub.agnes-ai.com
+      - key: AGNES_TEXT_MODEL
+        value: agnes-2.0-flash
+      - key: AGNES_IMAGE_MODEL
+        value: agnes-image-2.1-flash
+      - key: AGNES_VIDEO_MODEL
+        value: agnes-video-v2.0
