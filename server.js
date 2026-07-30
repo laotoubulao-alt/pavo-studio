@@ -5,7 +5,6 @@ import { fileURLToPath } from 'node:url';
 import dns from 'node:dns';
 import { fetch, ProxyAgent } from 'undici';
 import { spawn } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
 
 // Agnes can resolve to an unreachable IPv6 route on some Windows networks.
 dns.setDefaultResultOrder('ipv4first');
@@ -14,7 +13,6 @@ const app = express();
 const port = Number(process.env.PORT || 8787);
 const root = path.dirname(fileURLToPath(import.meta.url));
 app.use(express.json({ limit: '12mb' }));
-const freeImageJobs = new Map();
 
 const providers = {
   puter: { label: 'Puter AI 免费入口', kind: 'puter', key: '', base: '', model: '', fallbackModel: 'gpt-5-nano' },
@@ -133,11 +131,9 @@ app.post('/api/images/generate', async (req, res, next) => {
     if (!prompt?.trim()) return res.status(400).json({ error: '缺少图片提示词' });
     if (provider === 'pollinations') {
       const [width, height] = size.split('x').map(Number);
-      const safePrompt = prompt.replace(/\s+/g, ' ').trim().slice(0, 700);
-      const upstream = `https://image.pollinations.ai/prompt/${encodeURIComponent(safePrompt)}?width=${width || 1024}&height=${height || 1536}&model=flux&nologo=true&seed=${Date.now()}`;
-      const id = randomUUID();
-      freeImageJobs.set(id, upstream);
-      return res.json({ images: [{ url: `/api/images/free/${id}` }], provider, model: 'flux' });
+      const safePrompt = prompt.replace(/\s+/g, ' ').trim().slice(0, 320);
+      const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(safePrompt)}?width=${width || 1024}&height=${height || 1536}&model=flux&nologo=true&seed=${Date.now()}`;
+      return res.json({ images: [{ url }], provider, model: 'flux' });
     }
     if (!['agnes', 'openai'].includes(provider)) return res.status(400).json({ error: '该供应商未配置图片生成适配器' });
     const p = providers[provider], key = env(p.key);
@@ -148,19 +144,6 @@ app.post('/api/images/generate', async (req, res, next) => {
     if (images.length) body.extra_body = { image: images, response_format: 'url' };
     const data = await jsonFetch(`${base}/images/generations`, { method: 'POST', headers: { Authorization: `Bearer ${key}`, 'content-type': 'application/json' }, body: JSON.stringify(body) });
     res.json({ images: data.data || [], provider, model });
-  } catch (error) { next(error); }
-});
-
-app.get('/api/images/free/:id', async (req, res, next) => {
-  try {
-    const upstream = freeImageJobs.get(req.params.id);
-    if (!upstream) return res.status(404).send('图片任务已过期，请重新生成');
-    const response = await fetch(upstream, { dispatcher, signal: AbortSignal.timeout(120000) });
-    if (!response.ok) return res.status(response.status).send(`免费图片服务返回 ${response.status}`);
-    const bytes = Buffer.from(await response.arrayBuffer());
-    res.set('content-type', response.headers.get('content-type') || 'image/jpeg');
-    res.set('cache-control', 'public, max-age=86400');
-    res.send(bytes);
   } catch (error) { next(error); }
 });
 
