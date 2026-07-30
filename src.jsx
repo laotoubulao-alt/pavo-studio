@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Aperture, Check, ChevronRight, CircleAlert, Clapperboard, Download, Film, Image as ImageIcon, LoaderCircle, Pause, Play, RefreshCw, Settings2, Sparkles, Video, WandSparkles } from 'lucide-react';
+import { Aperture, Check, ChevronRight, CircleAlert, Clapperboard, Download, Film, Image as ImageIcon, LoaderCircle, Pause, Play, Plus, RefreshCw, Settings2, Sparkles, Video, WandSparkles } from 'lucide-react';
 import './style.css';
 import './style-tech.css';
 
@@ -33,6 +33,7 @@ function App() {
   const [model, setModel] = useState('');
   const [stage, setStage] = useState('idea');
   const [project, setProject] = useState(saved);
+  const [history, setHistory] = useState(() => { try { return JSON.parse(localStorage.getItem('pavo-project-history') || '[]'); } catch { return []; } });
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [settings, setSettings] = useState(false);
@@ -40,6 +41,15 @@ function App() {
   const [previewPlaying, setPreviewPlaying] = useState(true);
   const selected = useMemo(() => config.providers.find(item => item.id === provider), [config, provider]);
   const patchProject = values => setProject(current => ({ ...current, ...values }));
+  const archiveCurrent = () => {
+    if (!project.idea.trim() && !project.script.trim()) return history;
+    const entry = { id: crypto.randomUUID(), name: project.idea.trim().slice(0, 24) || '未命名短剧', savedAt: Date.now(), data: project };
+    const next = [entry, ...history].slice(0, 20);
+    setHistory(next); localStorage.setItem('pavo-project-history', JSON.stringify(next));
+    return next;
+  };
+  const newProject = () => { archiveCurrent(); setProject({ ...emptyProject }); setStage('idea'); setError(''); };
+  const openProject = id => { const item = history.find(x => x.id === id); if (!item) return; archiveCurrent(); setProject({ ...emptyProject, ...item.data }); setStage('idea'); setError(''); };
 
   useEffect(() => { api('/api/config').then(data => { setConfig(data); const first = data.providers.find(item => item.configured); if (first) setProvider(first.id); }).catch(e => setError(e.message)); }, []);
   useEffect(() => { setModel(selected?.model || ''); }, [selected]);
@@ -119,7 +129,7 @@ function App() {
   return <div className="appShell">
     <aside className="sidebar">
       <div className="brand"><span>P</span><div><b>Pavo</b><small>短剧工作台</small></div></div>
-      <div className="projectLabel"><span>当前项目</span><b>{project.idea.trim().slice(0, 18) || '未命名短剧'}</b></div>
+      <div className="projectLabel"><span>当前项目</span><b>{project.idea.trim().slice(0, 18) || '未命名短剧'}</b><button className="newProjectButton" onClick={newProject}><Plus/>新建项目</button>{history.length > 0 && <select value="" onChange={e => openProject(e.target.value)}><option value="">打开历史项目</option>{history.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>}</div>
       <nav>{stages.map(({ id, label, icon: Icon }, index) => <button key={id} className={stage === id ? 'active' : ''} onClick={() => setStage(id)}><span className="stepIndex">{completed[id] ? <Check/> : String(index + 1).padStart(2, '0')}</span><Icon/><span>{label}</span>{stage === id && <ChevronRight/>}</button>)}</nav>
       <div className="railProgress"><div><span>制作进度</span><b>{progress}/5</b></div><i><em style={{ width: `${progress * 20}%` }}/></i></div>
       <button className="settingsButton" onClick={() => setSettings(true)}><Settings2/> 模型与接口</button>
@@ -154,7 +164,7 @@ function Action({ busy, disabled, onClick, children }) { return <button classNam
 function Field({ label, children }) { return <label className="field"><span>{label}</span>{children}</label>; }
 
 function CinematicPreview({ playing, setPlaying }) { return <section className={`cinematic ${playing ? 'playing' : ''}`}><div className="scene"><div className="windowGlow"/><div className="rain"/><div className="silhouette"><i/></div><div className="focusFrame"><i/><i/><i/><i/></div><div className="scanline"/></div><header><span><i/>LIVE PREVIS</span><code>00:00:04:18</code></header><footer><button onClick={() => setPlaying(!playing)}>{playing ? <Pause/> : <Play/>}</button><div><b>镜头 01 · 缓慢推进</b><span>50mm · f/2.8 · 24fps</span></div><em>REC</em></footer></section>; }
-function FramePreview({ url }) { return <section className="mediaStage">{url ? <img src={url} alt="分镜图"/> : <div className="mediaEmpty"><Aperture/><b>等待分镜图</b><span>生成图片或输入公开 URL</span></div>}<div className="stageMeta"><span>KEYFRAME 01</span><code>9:16 · 1024×1536</code></div></section>; }
+function FramePreview({ url }) { const [failed, setFailed] = useState(false); useEffect(() => setFailed(false), [url]); return <section className="mediaStage">{url && !failed ? <img src={url} alt="分镜图" onError={() => setFailed(true)}/> : <div className="mediaEmpty"><Aperture/><b>{failed ? '图片地址已失效' : '等待分镜图'}</b><span>{failed ? '请点击左侧按钮重新生成' : '生成图片或输入公开 URL'}</span></div>}<div className="stageMeta"><span>KEYFRAME 01</span><code>9:16 · 1024×1536</code></div></section>; }
 function VideoJob({ job, busy, poll }) { return <section className="mediaStage videoStage">{!job ? <div className="mediaEmpty"><Video/><b>等待 Agnes 视频任务</b><span>分镜图将作为视频首帧</span></div> : <>{job.url ? <video controls autoPlay loop muted src={job.url}/> : <div className="rendering"><div className="renderRings"><i/><i/><i/></div><b>Agnes 正在生成</b><span>状态：{job.status}</span></div>}<div className="jobControls"><code>{job.id}</code><button onClick={poll} disabled={busy === 'poll'}><RefreshCw className={busy === 'poll' ? 'spin' : ''}/>刷新</button>{job.url && <a href={job.url} target="_blank" rel="noreferrer"><Download/>下载</a>}</div></>}<div className="stageMeta"><span>AGNES VIDEO V2.0</span><code>9:16 · 24 FPS</code></div></section>; }
 function Settings({ config, provider, setProvider, model, setModel, refresh, close }) {
   const item = config.providers.find(p => p.id === provider);
