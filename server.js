@@ -70,6 +70,18 @@ function publicConfig() {
 
 app.get('/api/config', (_req, res) => res.json({ providers: publicConfig() }));
 
+// Runtime configuration endpoint. Keys are kept in the server process only;
+// they are never returned to the browser and are not written to disk.
+app.post('/api/providers/:id/configure', (req, res) => {
+  const p = providers[req.params.id];
+  if (!p) return res.status(404).json({ error: '供应商不存在' });
+  const { apiKey, baseUrl, model } = req.body || {};
+  if (typeof apiKey === 'string' && apiKey.trim()) process.env[p.key] = apiKey.trim();
+  if (p.base && typeof baseUrl === 'string' && baseUrl.trim()) process.env[p.base] = baseUrl.trim();
+  if (p.model && typeof model === 'string' && model.trim()) process.env[p.model] = model.trim();
+  res.json({ providers: publicConfig() });
+});
+
 app.post('/api/providers/:id/test', async (req, res, next) => {
   try {
     const p = providers[req.params.id];
