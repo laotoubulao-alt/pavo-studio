@@ -87,7 +87,12 @@ function App() {
     setError(''); setBusy('image');
     try {
       const imageProvider = selected?.capabilities.includes('image') ? provider : 'pollinations';
-      const data = await api('/api/images/generate', { method: 'POST', body: JSON.stringify({ provider: imageProvider, prompt: project.framePrompt, size: '1024x1536' }) });
+      let imagePrompt = project.framePrompt;
+      if (imageProvider === 'pollinations' && window.puter?.ai) {
+        const translated = await window.puter.ai.chat(`Translate this storyboard image prompt into concise English under 180 words. Preserve subject, appearance, scene, composition, lighting and camera details. Output only the English prompt:\n\n${project.framePrompt}`, { model: 'gpt-5-nano' });
+        imagePrompt = typeof translated === 'string' ? translated : translated?.message?.content || translated?.text || imagePrompt;
+      }
+      const data = await api('/api/images/generate', { method: 'POST', body: JSON.stringify({ provider: imageProvider, prompt: imagePrompt, size: '1024x1536' }) });
       const item = data.images?.[0] || {};
       patchProject({ frameUrl: item.url || (item.b64_json ? `data:image/png;base64,${item.b64_json}` : '') });
     } catch (e) { setError(e.message); } finally { setBusy(''); }
